@@ -72,10 +72,11 @@ static const char *hid_name = "/dev/uhid0";
 static report_desc_t hid_desc;
 static struct hid_item hid_buttons[BUTTON_MAX];
 static uint8_t hid_have_button[BUTTON_MAX];
+static struct hid_item hid_volume[1];
+static uint8_t hid_have_volume[1];
 static int base_key = 72;
 static int cmd_key = 36;
 static int sustain;
-static uint8_t key_state[128];
 
 #ifdef HAVE_DEBUG
 #define	DPRINTF(fmt, ...) printf("%s:%d: " fmt, __FILE__, __LINE__,## __VA_ARGS__)
@@ -100,9 +101,6 @@ ghero_write_data(jack_nframes_t t, jack_nframes_t nframes, void *buf, uint8_t *m
 {
 	uint8_t *buffer;
 
-	if ((mbuf[0] & 0xF0) == 0x90)
-		key_state[mbuf[1] & 127] = (mbuf[2] != 0);
-
 	DPRINTF("Writing buffer %p, %d\n", mbuf, len);
 
 #ifdef JACK_MIDI_NEEDS_NFRAMES
@@ -122,23 +120,6 @@ ghero_write_data(jack_nframes_t t, jack_nframes_t nframes, void *buf, uint8_t *m
 	return (t + 1);
 }
 
-static jack_nframes_t
-ghero_clear_keys(jack_nframes_t t, jack_nframes_t nframes, void *buf)
-{
-	int i;
-	uint8_t mbuf[8];
-
-	for (i = 0; i != 128; i++) {
-		if (key_state[i]) {
-			mbuf[0] = 0x90;
-			mbuf[1] = i;
-			mbuf[2] = 0;
-			t = ghero_write_data(t, nframes, buf, mbuf, 3);
-		}
-	}
-	return (t);
-}
-
 static void
 ghero_read(jack_nframes_t nframes)
 {
@@ -150,6 +131,7 @@ ghero_read(jack_nframes_t nframes)
 	uint32_t delta;
 	int len;
 	int i;
+	int volume;
 	uint32_t value;
 
 	if (output_port == NULL)
@@ -178,85 +160,60 @@ ghero_read(jack_nframes_t nframes)
 					if (hid_have_button[i] && hid_get_data(data, &hid_buttons[i]))
 						value |= (1 << i);
 				}
+				if (hid_have_volume[0])
+					volume = hid_get_data(data, &hid_volume[0]);
+				else
+					volume = 0;
+
+				if (volume < -32000)
+					volume = -32000;
+				else if (volume > 32000)
+					volume = 32000;
+
+				volume = 80 + (((127 - 80) * volume) / 32000);
 
 				delta = old_value ^ value;
 				old_value = value;
 
 				if (value != 0)
-					DPRINTF("value = 0x%08x\n", value);
+					DPRINTF("value = 0x%08x, volume = %d\n", value, volume);
 
-				if (delta & BUTTON_DOWN) {
-					sustain = (value & BUTTON_DOWN) ? 1 : 0;
-					mbuf[0] = 0xB0 | 0 /* ch */ ;
+				if (delta & (BUTTON_DOWN | BUTTON_UP)) {
+					mbuf[0] = 0x90;
+					mbuf[1] = base_key + 0;
+					mbuf[2] = (value & (BUTTON_DOWN | BUTTON_UP)) ? volume : 0;
+					t = ghero_write_data(t, nframes, buf, mbuf, 3);
+				}
+				if (delta & BUTTON_ORANGE) {
+					sustain = (value & BUTTON_ORANGE) ? 1 : 0;
+					mbuf[0] = 0xB0;
 					mbuf[1] = 0x40;
 					mbuf[2] = sustain ? 127 : 0;
 					t = ghero_write_data(t, nframes, buf, mbuf, 3);
 				}
-				if (delta & BUTTON_UP)
-					t = ghero_clear_keys(t, nframes, buf);
-
-				if (value & BUTTON_UP) {
-					if (delta & BUTTON_ORANGE) {
-						mbuf[0] = 0x90;
-						mbuf[1] = cmd_key + 0;
-						mbuf[2] = (value & BUTTON_ORANGE) ? 127 : 0;
-						t = ghero_write_data(t, nframes, buf, mbuf, 3);
-					}
-					if (delta & BUTTON_BLUE) {
-						mbuf[0] = 0x90;
-						mbuf[1] = cmd_key + 1;
-						mbuf[2] = (value & BUTTON_BLUE) ? 127 : 0;
-						t = ghero_write_data(t, nframes, buf, mbuf, 3);
-					}
-					if (delta & BUTTON_YELLOW) {
-						mbuf[0] = 0x90;
-						mbuf[1] = cmd_key + 2;
-						mbuf[2] = (value & BUTTON_YELLOW) ? 127 : 0;
-						t = ghero_write_data(t, nframes, buf, mbuf, 3);
-					}
-					if (delta & BUTTON_RED) {
-						mbuf[0] = 0x90;
-						mbuf[1] = cmd_key + 3;
-						mbuf[2] = (value & BUTTON_RED) ? 127 : 0;
-						t = ghero_write_data(t, nframes, buf, mbuf, 3);
-					}
-					if (delta & BUTTON_GREEN) {
-						mbuf[0] = 0x90;
-						mbuf[1] = cmd_key + 4;
-						mbuf[2] = (value & BUTTON_GREEN) ? 127 : 0;
-						t = ghero_write_data(t, nframes, buf, mbuf, 3);
-					}
-				} else {
-					if (delta & BUTTON_ORANGE) {
-						mbuf[0] = 0x90;
-						mbuf[1] = base_key + 0;
-						mbuf[2] = (value & BUTTON_ORANGE) ? 127 : 0;
-						t = ghero_write_data(t, nframes, buf, mbuf, 3);
-					}
-					if (delta & BUTTON_BLUE) {
-						mbuf[0] = 0x90;
-						mbuf[1] = base_key + 1;
-						mbuf[2] = (value & BUTTON_BLUE) ? 127 : 0;
-						t = ghero_write_data(t, nframes, buf, mbuf, 3);
-					}
-					if (delta & BUTTON_YELLOW) {
-						mbuf[0] = 0x90;
-						mbuf[1] = base_key + 2;
-						mbuf[2] = (value & BUTTON_YELLOW) ? 127 : 0;
-						t = ghero_write_data(t, nframes, buf, mbuf, 3);
-					}
-					if (delta & BUTTON_RED) {
-						mbuf[0] = 0x90;
-						mbuf[1] = base_key + 3;
-						mbuf[2] = (value & BUTTON_RED) ? 127 : 0;
-						t = ghero_write_data(t, nframes, buf, mbuf, 3);
-					}
-					if (delta & BUTTON_GREEN) {
-						mbuf[0] = 0x90;
-						mbuf[1] = base_key + 4;
-						mbuf[2] = (value & BUTTON_GREEN) ? 127 : 0;
-						t = ghero_write_data(t, nframes, buf, mbuf, 3);
-					}
+				if (delta & BUTTON_BLUE) {
+					mbuf[0] = 0x90;
+					mbuf[1] = cmd_key + 0;
+					mbuf[2] = (value & BUTTON_BLUE) ? 127 : 0;
+					t = ghero_write_data(t, nframes, buf, mbuf, 3);
+				}
+				if (delta & BUTTON_YELLOW) {
+					mbuf[0] = 0x90;
+					mbuf[1] = cmd_key + 1;
+					mbuf[2] = (value & BUTTON_YELLOW) ? 127 : 0;
+					t = ghero_write_data(t, nframes, buf, mbuf, 3);
+				}
+				if (delta & BUTTON_RED) {
+					mbuf[0] = 0x90;
+					mbuf[1] = cmd_key + 2;
+					mbuf[2] = (value & BUTTON_RED) ? 127 : 0;
+					t = ghero_write_data(t, nframes, buf, mbuf, 3);
+				}
+				if (delta & BUTTON_GREEN) {
+					mbuf[0] = 0x90;
+					mbuf[1] = cmd_key + 3;
+					mbuf[2] = (value & BUTTON_GREEN) ? 127 : 0;
+					t = ghero_write_data(t, nframes, buf, mbuf, 3);
 				}
 			} else {
 				break;
@@ -305,6 +262,7 @@ ghero_watchdog(void *arg)
 				hid_desc = hid_get_report_desc(fd);
 
 				memset(hid_have_button, 0, sizeof(hid_have_button));
+				memset(hid_have_volume, 0, sizeof(hid_have_volume));
 
 				d = hid_start_parse(hid_desc, 1 << hid_input, -1);
 				if (d != NULL) {
@@ -326,6 +284,8 @@ ghero_watchdog(void *arg)
 
 								value = HID_USAGE(h.usage);
 
+								DPRINTF("value = 0x%08x\n", value);
+
 								switch (value) {
 								case 0x90:
 								case 0x91:
@@ -334,6 +294,10 @@ ghero_watchdog(void *arg)
 									value = 16 + (value & 3);
 									hid_have_button[value] = 1;
 									hid_buttons[value] = h;
+									break;
+								case 0x34:
+									hid_volume[0] = h;
+									hid_have_volume[0] = 1;
 									break;
 								default:
 									break;
