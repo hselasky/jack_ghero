@@ -349,7 +349,8 @@ main(int argc, char **argv)
 {
 	int error;
 	int c;
-	char devname[128];
+	const char *pname;
+	char devname[64];
 
 	while ((c = getopt(argc, argv, "b:c:Bd:h")) != -1) {
 		switch (c) {
@@ -388,7 +389,14 @@ main(int argc, char **argv)
 
 	pthread_mutex_init(&ghero_mtx, NULL);
 
-	jack_client = jack_client_open(PACKAGE_NAME,
+	if (strncmp(hid_name, "/dev/", 5) == 0)
+		pname = hid_name + 5;
+	else
+		pname = hid_name;
+
+	snprintf(devname, sizeof(devname), PACKAGE_NAME "-%s", pname);
+
+	jack_client = jack_client_open(devname,
 	    JackNoStartServer, NULL);
 	if (jack_client == NULL) {
 		errx(EX_UNAVAILABLE, "Could not connect "
@@ -402,20 +410,20 @@ main(int argc, char **argv)
 	}
 	jack_on_shutdown(jack_client, ghero_jack_shutdown, 0);
 
-	if (hid_name != NULL) {
-		snprintf(devname, sizeof(devname), "%s.TX", hid_name);
+	output_port = jack_port_register(
+	    jack_client, "TX", JACK_DEFAULT_MIDI_TYPE,
+	    JackPortIsOutput, 0);
 
-		output_port = jack_port_register(
-		    jack_client, devname, JACK_DEFAULT_MIDI_TYPE,
-		    JackPortIsOutput, 0);
-
-		if (output_port == NULL) {
-			errx(EX_UNAVAILABLE, "Could not "
-			    "register JACK output port.");
-		}
+	if (output_port == NULL) {
+		errx(EX_UNAVAILABLE, "Could not "
+		    "register JACK output port.");
 	}
+
 	if (jack_activate(jack_client))
 		errx(EX_UNAVAILABLE, "Cannot activate JACK client.");
+
+	/* cleanup any stale connections */
+	jack_port_disconnect(jack_client, output_port);
 
 	ghero_watchdog(NULL);
 
