@@ -257,7 +257,7 @@ ghero_watchdog(void *arg)
 		if (hid_name == NULL) {
 			/* do nothing */
 		} else if (read_fd < 0) {
-			fd = open(hid_name, O_RDWR | O_NONBLOCK);
+			fd = open(hid_name, O_RDONLY | O_NONBLOCK);
 			if (fd > -1) {
 				hid_desc = hid_get_report_desc(fd);
 
