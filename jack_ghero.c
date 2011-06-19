@@ -411,7 +411,7 @@ main(int argc, char **argv)
 	jack_on_shutdown(jack_client, ghero_jack_shutdown, 0);
 
 	output_port = jack_port_register(
-	    jack_client, "TX", JACK_DEFAULT_MIDI_TYPE,
+	    jack_client, "midi.TX", JACK_DEFAULT_MIDI_TYPE,
 	    JackPortIsOutput, 0);
 
 	if (output_port == NULL) {
