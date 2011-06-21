@@ -418,7 +418,6 @@ main(int argc, char **argv)
 		errx(EX_UNAVAILABLE, "Could not "
 		    "register JACK output port.");
 	}
-
 	if (jack_activate(jack_client))
 		errx(EX_UNAVAILABLE, "Cannot activate JACK client.");
 
