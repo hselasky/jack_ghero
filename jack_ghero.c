@@ -421,9 +421,6 @@ main(int argc, char **argv)
 	if (jack_activate(jack_client))
 		errx(EX_UNAVAILABLE, "Cannot activate JACK client.");
 
-	/* cleanup any stale connections */
-	jack_port_disconnect(jack_client, output_port);
-
 	ghero_watchdog(NULL);
 
 	return (0);
