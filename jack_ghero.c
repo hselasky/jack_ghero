@@ -49,7 +49,7 @@
 #include <dev/usb/usbhid.h>
 
 #define	PACKAGE_NAME		"jack_ghero"
-#define	PACKAGE_VERSION		"1.0"
+#define	PACKAGE_VERSION		"1.0.2"
 #define	BUFFER_SIZE		256	/* bytes */
 
 #define	BUTTON_ORANGE 0x20
@@ -77,6 +77,7 @@ static uint8_t hid_have_volume[1];
 static int base_key = 72;
 static int cmd_key = 36;
 static int sustain;
+static char *port_name;
 
 #ifdef HAVE_DEBUG
 #define	DPRINTF(fmt, ...) printf("%s:%d: " fmt, __FUNCTION__, __LINE__,## __VA_ARGS__)
@@ -334,6 +335,7 @@ usage()
 	    "	-B (run in background)\n"
 	    "	-b 72 (base play key - C6)\n"
 	    "	-c 36 (base command key - C3)\n"
+	    "	-n jack_ghero (specify port name)\n"
 	    "	-h (show help)\n");
 	exit(0);
 }
@@ -352,7 +354,7 @@ main(int argc, char **argv)
 	const char *pname;
 	char devname[64];
 
-	while ((c = getopt(argc, argv, "b:c:Bd:h")) != -1) {
+	while ((c = getopt(argc, argv, "b:c:Bd:hn:")) != -1) {
 		switch (c) {
 		case 'b':
 			base_key = atoi(optarg);
@@ -371,6 +373,10 @@ main(int argc, char **argv)
 			break;
 		case 'd':
 			hid_name = optarg;
+			break;
+		case 'n':
+			free(port_name);
+			port_name = strdup(optarg);
 			break;
 		case 'h':
 		default:
@@ -394,7 +400,8 @@ main(int argc, char **argv)
 	else
 		pname = hid_name;
 
-	snprintf(devname, sizeof(devname), PACKAGE_NAME "-%s", pname);
+	snprintf(devname, sizeof(devname), "%s-%s",
+	    (port_name != NULL) ? port_name : PACKAGE_NAME, pname);
 
 	jack_client = jack_client_open(devname,
 	    JackNoStartServer, NULL);

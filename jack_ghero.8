@@ -25,7 +25,7 @@
 .\" SUCH DAMAGE.
 .\"
 .\"
-.Dd June 21, 2011
+.Dd January 17, 2012
 .Dt JACK_GHERO 8
 .Sh NAME
 .Nm jack_ghero
@@ -35,6 +35,7 @@
 .Op Fl d Ar <uhid_device_name>
 .Op Fl b Ar <base_play_key>
 .Op Fl c Ar <base_command_key>
+.Op Fl n Ar <port_name>
 .Op Fl B
 .Op Fl h
 .Sh DESCRIPTION
@@ -53,6 +54,9 @@ Specify the device name of the USB device to use, for example /dev/uhid0 .
 Specify the base play key. The default is 72 which equals C in octave 6.
 .It Fl c
 Specify the base command key. The default is 36 which equals C in octave 3.
+.It Fl n
+Specify a custom port name when registering with the JACK server.
+The default value is "jack_ghero".
 .It Fl h
 Print help text showing available options.
 .El
