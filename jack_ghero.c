@@ -49,7 +49,7 @@
 #include <dev/usb/usbhid.h>
 
 #define	PACKAGE_NAME		"jack_ghero"
-#define	PACKAGE_VERSION		"1.0.2"
+#define	PACKAGE_VERSION		"1.0.3"
 #define	BUFFER_SIZE		256	/* bytes */
 
 #define	BUTTON_ORANGE 0x20
