@@ -39,10 +39,11 @@ INCLUDEDIR=	${PREFIX}/include
 MKLINT=		no
 NOGCCERROR=
 NO_PROFILE=
+PTHREAD_LIBS?=	-lpthread
 
 CFLAGS+=	-I${PREFIX}/include -Wall
 
-LDFLAGS+=	-L${LIBDIR} -lpthread -ljack -lusbhid
+LDFLAGS+=	-L${LIBDIR} ${PTHREAD_LIBS} -ljack -lusbhid
 
 .if defined(HAVE_DEBUG)
 CFLAGS+=	-DHAVE_DEBUG
