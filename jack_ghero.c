@@ -55,6 +55,7 @@
 #define	MODE_TRANS 0
 #define	MODE_CHORD 1
 #define	MODE_MAX 2
+#define	MULTI_KEY_TIME 500000		/* 0.5s */
 
 #define	BUTTON_ORANGE 0x20
 #define	BUTTON_BLUE 0x08
@@ -238,11 +239,11 @@ ghero_read(jack_nframes_t nframes)
 							delta = curr - string_last;
 							string_last = curr;
 
-							if (delta < 1000000) {
+							if (delta < MULTI_KEY_TIME) {
 								if (delta == 0)
 									n = STRING_NUM;
 								else
-									n = 1000000 / delta;
+									n = MULTI_KEY_TIME / delta;
 								if (n > STRING_NUM)
 									n = STRING_NUM;
 							} else {
