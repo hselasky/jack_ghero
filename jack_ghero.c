@@ -51,6 +51,10 @@
 #define	PACKAGE_NAME		"jack_ghero"
 #define	PACKAGE_VERSION		"1.0.3"
 #define	BUFFER_SIZE		256	/* bytes */
+#define	STRING_NUM		14
+#define	MODE_TRANS 0
+#define	MODE_CHORD 1
+#define	MODE_MAX 2
 
 #define	BUTTON_ORANGE 0x20
 #define	BUTTON_BLUE 0x08
@@ -61,6 +65,7 @@
 #define	BUTTON_START 0x100
 #define	BUTTON_UP 0x10000
 #define	BUTTON_DOWN 0x20000
+#define	BUTTON_XBOX 0x800
 #define	BUTTON_MAX 32
 
 static jack_port_t *output_port;
@@ -72,8 +77,8 @@ static const char *hid_name = "/dev/uhid0";
 static report_desc_t hid_desc;
 static struct hid_item hid_buttons[BUTTON_MAX];
 static uint8_t hid_have_button[BUTTON_MAX];
-static struct hid_item hid_volume[1];
-static uint8_t hid_have_volume[1];
+static struct hid_item hid_vert_angle[1];
+static uint8_t hid_have_vert_angle[1];
 static struct hid_item hid_bend[1];
 static uint8_t hid_have_bend[1];
 static int base_key = 72;
@@ -81,6 +86,12 @@ static int cmd_key = 36;
 static int sustain;
 static int last_bend;
 static char *port_name;
+static const uint8_t string_map[STRING_NUM] = {2, 5, 7, 9, 11, 6, 8, 10, 8, 6, 11, 9, 7};
+static uint8_t string_pressed[24];
+static int string_shift;
+static int string_index;
+static jack_time_t string_last;
+static int mode;
 
 #ifdef HAVE_DEBUG
 #define	DPRINTF(fmt, ...) printf("%s:%d: " fmt, __FUNCTION__, __LINE__,## __VA_ARGS__)
@@ -125,6 +136,14 @@ ghero_write_data(jack_nframes_t t, jack_nframes_t nframes, void *buf, uint8_t *m
 }
 
 static void
+ghero_string_next(void)
+{
+	string_index++;
+	if (string_index >= STRING_NUM)
+		string_index = 1;
+}
+
+static void
 ghero_read(jack_nframes_t nframes)
 {
 	void *buf;
@@ -135,7 +154,7 @@ ghero_read(jack_nframes_t nframes)
 	uint32_t delta;
 	int len;
 	int i;
-	int volume;
+	int vert_angle;
 	int bend;
 	uint32_t value;
 
@@ -183,31 +202,90 @@ ghero_read(jack_nframes_t nframes)
 					mbuf[2] = (bend >> 7) & 0x7F;
 					t = ghero_write_data(t, nframes, buf, mbuf, 3);
 				}
-				if (hid_have_volume[0])
-					volume = hid_get_data(data, &hid_volume[0]);
+				if (hid_have_vert_angle[0])
+					vert_angle = hid_get_data(data, &hid_vert_angle[0]);
 				else
-					volume = 0;
-
-				if (volume < -32000)
-					volume = -32000;
-				else if (volume > 32000)
-					volume = 32000;
-
-				volume = 80 + (((127 - 80) * volume) / 32000);
+					vert_angle = 0;
 
 				delta = old_value ^ value;
 				old_value = value;
 
 				if (value != 0)
-					DPRINTF("value = 0x%08x, volume = %d\n", value, volume);
+					DPRINTF("value = 0x%08x, vert_angle = %d, bend = %d\n", value, vert_angle, bend);
 
+				if (delta & value & BUTTON_XBOX) {
+					mode++;
+					mode %= MODE_MAX;
+					DPRINTF("new mode = %d\n", mode);
+				}
 				if (delta & (BUTTON_DOWN | BUTTON_UP)) {
-					mbuf[0] = 0x90;
-					mbuf[1] = base_key + 0;
-					mbuf[2] = (value & (BUTTON_DOWN | BUTTON_UP)) ? volume : 0;
-					t = ghero_write_data(t, nframes, buf, mbuf, 3);
+					jack_time_t curr;
+					jack_time_t delta;
+					uint32_t n;
+					uint32_t x;
+					uint32_t y;
+
+					switch (mode) {
+					case MODE_TRANS:
+						mbuf[0] = 0x90;
+						mbuf[1] = base_key + 0;
+						mbuf[2] = (value & (BUTTON_DOWN | BUTTON_UP)) ? 127 : 0;
+						t = ghero_write_data(t, nframes, buf, mbuf, 3);
+						break;
+					case MODE_CHORD:
+						curr = jack_get_time();
+						delta = curr - string_last;
+						string_last = curr;
+
+						if (delta < 1000000) {
+							if (delta == 0)
+								n = STRING_NUM;
+							else
+								n = 1000000 / delta;
+							if (n > STRING_NUM)
+								n = STRING_NUM;
+						} else {
+							n = 1;
+						}
+
+						if (value & (BUTTON_DOWN | BUTTON_UP)) {
+							/* press */
+							for (x = 0; x != n; x++) {
+								y = string_shift + string_map[string_index];
+
+								if (string_pressed[y] != 0) {
+									ghero_string_next();
+									continue;
+								}
+								string_pressed[y] = 1;
+								mbuf[0] = 0x90;
+								mbuf[1] = base_key + y;
+								mbuf[2] = 127;
+								t = ghero_write_data(t, nframes, buf, mbuf, 3);
+								ghero_string_next();
+							}
+						} else {
+							/* release */
+							for (x = 0; x != 24; x++) {
+								if (string_pressed[x] == 0)
+									continue;
+								string_pressed[x] = 0;
+								mbuf[0] = 0x90;
+								mbuf[1] = base_key + x;
+								mbuf[2] = 0;
+								t = ghero_write_data(t, nframes, buf, mbuf, 3);
+							}
+						}
+						break;
+					default:
+						break;
+					}
 				}
 				if (delta & BUTTON_ORANGE) {
+					if (!(value & BUTTON_ORANGE)) {
+						string_shift = string_shift ? 0 : 12;
+						string_index = 0;
+					}
 					sustain = (value & BUTTON_ORANGE) ? 1 : 0;
 					mbuf[0] = 0xB0;
 					mbuf[1] = 0x40;
@@ -285,7 +363,8 @@ ghero_watchdog(void *arg)
 				hid_desc = hid_get_report_desc(fd);
 
 				memset(hid_have_button, 0, sizeof(hid_have_button));
-				memset(hid_have_volume, 0, sizeof(hid_have_volume));
+				memset(hid_have_vert_angle, 0, sizeof(hid_have_vert_angle));
+				memset(hid_have_bend, 0, sizeof(hid_have_bend));
 
 				d = hid_start_parse(hid_desc, 1 << hid_input, -1);
 				if (d != NULL) {
@@ -323,8 +402,8 @@ ghero_watchdog(void *arg)
 									hid_have_bend[0] = 1;
 									break;
 								case 0x34:
-									hid_volume[0] = h;
-									hid_have_volume[0] = 1;
+									hid_vert_angle[0] = h;
+									hid_have_vert_angle[0] = 1;
 									break;
 								default:
 									break;
