@@ -233,22 +233,22 @@ ghero_read(jack_nframes_t nframes)
 						t = ghero_write_data(t, nframes, buf, mbuf, 3);
 						break;
 					case MODE_CHORD:
-						curr = jack_get_time();
-						delta = curr - string_last;
-						string_last = curr;
-
-						if (delta < 1000000) {
-							if (delta == 0)
-								n = STRING_NUM;
-							else
-								n = 1000000 / delta;
-							if (n > STRING_NUM)
-								n = STRING_NUM;
-						} else {
-							n = 1;
-						}
-
 						if (value & (BUTTON_DOWN | BUTTON_UP)) {
+							curr = jack_get_time();
+							delta = curr - string_last;
+							string_last = curr;
+
+							if (delta < 1000000) {
+								if (delta == 0)
+									n = STRING_NUM;
+								else
+									n = 1000000 / delta;
+								if (n > STRING_NUM)
+									n = STRING_NUM;
+							} else {
+								n = 1;
+							}
+
 							/* press */
 							for (x = 0; x != n; x++) {
 								y = string_shift + string_map[string_index];
@@ -282,37 +282,66 @@ ghero_read(jack_nframes_t nframes)
 					}
 				}
 				if (delta & BUTTON_ORANGE) {
-					if (!(value & BUTTON_ORANGE)) {
-						string_shift = string_shift ? 0 : 12;
-						string_index = 0;
+					switch (mode) {
+					case MODE_TRANS:
+						sustain = (value & BUTTON_ORANGE) ? 1 : 0;
+						break;
+					case MODE_CHORD:
+						sustain = (value & BUTTON_ORANGE) ? 0 : 1;
+						break;
+					default:
+						break;
 					}
-					sustain = (value & BUTTON_ORANGE) ? 1 : 0;
 					mbuf[0] = 0xB0;
 					mbuf[1] = 0x40;
 					mbuf[2] = sustain ? 127 : 0;
 					t = ghero_write_data(t, nframes, buf, mbuf, 3);
 				}
 				if (delta & BUTTON_BLUE) {
-					mbuf[0] = 0x90;
-					mbuf[1] = cmd_key + 0;
-					mbuf[2] = (value & BUTTON_BLUE) ? 127 : 0;
-					t = ghero_write_data(t, nframes, buf, mbuf, 3);
+					switch (mode) {
+					case MODE_TRANS:
+						mbuf[0] = 0x90;
+						mbuf[1] = cmd_key + 3;
+						mbuf[2] = (value & BUTTON_BLUE) ? 127 : 0;
+						t = ghero_write_data(t, nframes, buf, mbuf, 3);
+						break;
+					case MODE_CHORD:
+						if (!(value & BUTTON_BLUE))
+							break;
+						string_shift = string_shift ? 0 : 12;
+						string_index = 0;
+
+						if (sustain != 0) {
+							mbuf[0] = 0xB0;
+							mbuf[1] = 0x40;
+							mbuf[2] = sustain ? 0 : 127;
+							t = ghero_write_data(t, nframes, buf, mbuf, 3);
+
+							mbuf[0] = 0xB0;
+							mbuf[1] = 0x40;
+							mbuf[2] = sustain ? 127 : 0;
+							t = ghero_write_data(t, nframes, buf, mbuf, 3);
+						}
+						break;
+					default:
+						break;
+					}
 				}
 				if (delta & BUTTON_YELLOW) {
 					mbuf[0] = 0x90;
-					mbuf[1] = cmd_key + 1;
+					mbuf[1] = cmd_key + 2;
 					mbuf[2] = (value & BUTTON_YELLOW) ? 127 : 0;
 					t = ghero_write_data(t, nframes, buf, mbuf, 3);
 				}
 				if (delta & BUTTON_RED) {
 					mbuf[0] = 0x90;
-					mbuf[1] = cmd_key + 2;
+					mbuf[1] = cmd_key + 1;
 					mbuf[2] = (value & BUTTON_RED) ? 127 : 0;
 					t = ghero_write_data(t, nframes, buf, mbuf, 3);
 				}
 				if (delta & BUTTON_GREEN) {
 					mbuf[0] = 0x90;
-					mbuf[1] = cmd_key + 3;
+					mbuf[1] = cmd_key + 0;
 					mbuf[2] = (value & BUTTON_GREEN) ? 127 : 0;
 					t = ghero_write_data(t, nframes, buf, mbuf, 3);
 				}
