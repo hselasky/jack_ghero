@@ -74,9 +74,12 @@ static struct hid_item hid_buttons[BUTTON_MAX];
 static uint8_t hid_have_button[BUTTON_MAX];
 static struct hid_item hid_volume[1];
 static uint8_t hid_have_volume[1];
+static struct hid_item hid_bend[1];
+static uint8_t hid_have_bend[1];
 static int base_key = 72;
 static int cmd_key = 36;
 static int sustain;
+static int last_bend;
 static char *port_name;
 
 #ifdef HAVE_DEBUG
@@ -133,6 +136,7 @@ ghero_read(jack_nframes_t nframes)
 	int len;
 	int i;
 	int volume;
+	int bend;
 	uint32_t value;
 
 	if (output_port == NULL)
@@ -160,6 +164,24 @@ ghero_read(jack_nframes_t nframes)
 				for (i = 0; i != BUTTON_MAX; i++) {
 					if (hid_have_button[i] && hid_get_data(data, &hid_buttons[i]))
 						value |= (1 << i);
+				}
+				if (hid_have_bend[0])
+					bend = hid_get_data(data, &hid_bend[0]);
+				else
+					bend = -32768;
+
+				if (bend != last_bend) {
+					last_bend = bend;
+					bend = ((bend + 32768) / 8) + (1 << 13);
+					if (bend < 0)
+						bend = 0;
+					else if (bend > 0x3FFF)
+						bend = 0x3FFF;
+
+					mbuf[0] = 0xE0;
+					mbuf[1] = bend & 0x7F;
+					mbuf[2] = (bend >> 7) & 0x7F;
+					t = ghero_write_data(t, nframes, buf, mbuf, 3);
 				}
 				if (hid_have_volume[0])
 					volume = hid_get_data(data, &hid_volume[0]);
@@ -295,6 +317,10 @@ ghero_watchdog(void *arg)
 									value = 16 + (value & 3);
 									hid_have_button[value] = 1;
 									hid_buttons[value] = h;
+									break;
+								case 0x33:
+									hid_bend[0] = h;
+									hid_have_bend[0] = 1;
 									break;
 								case 0x34:
 									hid_volume[0] = h;
