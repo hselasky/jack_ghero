@@ -370,7 +370,7 @@ ghero_read(jack_nframes_t nframes)
 						} else if (value & BUTTON_BLUE) {
 							string_index = 7;
 						} else if (value & BUTTON_ORANGE) {
-							string_index = 1;
+							string_index = 0;
 						} else {
 							string_index = 0;
 						}
