@@ -322,7 +322,7 @@ ghero_read(jack_nframes_t nframes)
 
 								string_shift = string_shift ? 0 : 12;
 								string_index = 1;
-								string_dir = 0;
+								string_dir = 1;
 								ghero_string_prev();
 
 								if (sustain != 0) {
