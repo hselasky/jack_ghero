@@ -229,6 +229,23 @@ ghero_read(jack_nframes_t nframes)
 					mode %= MODE_MAX;
 					DPRINTF("new mode = %d\n", mode);
 				}
+				if (delta & BUTTON_YELLOW) {
+					switch (mode) {
+					case MODE_TRANS:
+						mbuf[0] = 0x90;
+						mbuf[1] = cmd_key + 2;
+						mbuf[2] = (value & BUTTON_YELLOW) ? 127 : 0;
+						t = ghero_write_data(t, nframes, buf, mbuf, 3);
+						break;
+					case MODE_CHORD:
+						if (!(value & BUTTON_YELLOW))
+							break;
+						string_next = 1;
+						break;
+					default:
+						break;
+					}
+				}
 				if (delta & (BUTTON_DOWN | BUTTON_UP)) {
 					jack_time_t curr;
 					jack_time_t delta;
@@ -374,23 +391,6 @@ ghero_read(jack_nframes_t nframes)
 						mbuf[1] = cmd_key + 3;
 						mbuf[2] = (value & BUTTON_BLUE) ? 127 : 0;
 						t = ghero_write_data(t, nframes, buf, mbuf, 3);
-						break;
-					default:
-						break;
-					}
-				}
-				if (delta & BUTTON_YELLOW) {
-					switch (mode) {
-					case MODE_TRANS:
-						mbuf[0] = 0x90;
-						mbuf[1] = cmd_key + 2;
-						mbuf[2] = (value & BUTTON_YELLOW) ? 127 : 0;
-						t = ghero_write_data(t, nframes, buf, mbuf, 3);
-						break;
-					case MODE_CHORD:
-						if (!(value & BUTTON_YELLOW))
-							break;
-						string_next = 1;
 						break;
 					default:
 						break;
