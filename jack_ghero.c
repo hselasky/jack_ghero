@@ -89,6 +89,7 @@ static int last_bend;
 static char *port_name;
 static const uint8_t string_map[STRING_NUM] = {2, 5, 7, 9, 11, 6, 8, 10, 8, 6, 11, 9, 7};
 static uint8_t string_pressed[24];
+static int string_next;
 static int string_shift;
 static int string_index;
 static int string_first;
@@ -259,21 +260,47 @@ ghero_read(jack_nframes_t nframes)
 								n = 1;
 							}
 
+							if (string_next != 0) {
+								string_next = 0;
+
+								string_shift = string_shift ? 0 : 12;
+								string_first = 1;
+								if ((~value & BUTTON_BLUE) && (value & BUTTON_ORANGE)) {
+									string_index = 0;
+								} else if (~value & BUTTON_BLUE) {
+									string_index = 7;
+								} else if (value & BUTTON_ORANGE) {
+									string_index = 0;
+								} else {
+									string_index = 0;
+								}
+								if (sustain != 0) {
+									mbuf[0] = 0xB0;
+									mbuf[1] = 0x40;
+									mbuf[2] = sustain ? 0 : 127;
+									t = ghero_write_data(t, nframes, buf, mbuf, 3);
+
+									mbuf[0] = 0xB0;
+									mbuf[1] = 0x40;
+									mbuf[2] = sustain ? 127 : 0;
+									t = ghero_write_data(t, nframes, buf, mbuf, 3);
+								}
+							}
 							/* press */
 							for (x = 0; x != n; x++) {
-								if ((value & BUTTON_BLUE) && (value & BUTTON_ORANGE)) {
+								if ((~value & BUTTON_BLUE) && (value & BUTTON_ORANGE)) {
 									y = string_index;
 								} else {
 									if (string_first != 0) {
 										if (string_index == 0) {
-											if (value & BUTTON_BLUE)
+											if (~value & BUTTON_BLUE)
 												ghero_string_next();
 											if (value & BUTTON_ORANGE)
 												ghero_string_prev();
 										}
 										string_first = 0;
 										y = 0;
-									} else if (value & BUTTON_BLUE) {
+									} else if (~value & BUTTON_BLUE) {
 										ghero_string_next();
 										if (string_index == 0 && n > 1)
 											ghero_string_next();
@@ -317,7 +344,7 @@ ghero_read(jack_nframes_t nframes)
 				if (delta & (BUTTON_ORANGE | BUTTON_BLUE)) {
 					switch (mode) {
 					case MODE_CHORD:
-						sustain = (value & (BUTTON_ORANGE | BUTTON_BLUE)) ? 1 : 0;
+						sustain = ((value & BUTTON_ORANGE) || (~value & BUTTON_BLUE)) ? 1 : 0;
 						mbuf[0] = 0xB0;
 						mbuf[1] = 0x40;
 						mbuf[2] = sustain ? 127 : 0;
@@ -363,28 +390,7 @@ ghero_read(jack_nframes_t nframes)
 					case MODE_CHORD:
 						if (!(value & BUTTON_YELLOW))
 							break;
-						string_shift = string_shift ? 0 : 12;
-						string_first = 1;
-						if ((value & BUTTON_BLUE) && (value & BUTTON_ORANGE)) {
-							string_index = 0;
-						} else if (value & BUTTON_BLUE) {
-							string_index = 7;
-						} else if (value & BUTTON_ORANGE) {
-							string_index = 0;
-						} else {
-							string_index = 0;
-						}
-						if (sustain != 0) {
-							mbuf[0] = 0xB0;
-							mbuf[1] = 0x40;
-							mbuf[2] = sustain ? 0 : 127;
-							t = ghero_write_data(t, nframes, buf, mbuf, 3);
-
-							mbuf[0] = 0xB0;
-							mbuf[1] = 0x40;
-							mbuf[2] = sustain ? 127 : 0;
-							t = ghero_write_data(t, nframes, buf, mbuf, 3);
-						}
+						string_next = 1;
 						break;
 					default:
 						break;
