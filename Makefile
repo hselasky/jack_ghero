@@ -73,6 +73,6 @@ package:
 
 	rm -rf temp.tar
 
-	tar -jcvf jack_ghero-${VERSION}.tar.bz2 jack_ghero-${VERSION}
+	tar --uid=0 --gid=0 -jcvf jack_ghero-${VERSION}.tar.bz2 jack_ghero-${VERSION}
 
 .include <bsd.prog.mk>
