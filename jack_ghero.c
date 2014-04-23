@@ -345,6 +345,8 @@ ghero_read(jack_nframes_t nframes)
 									else
 										ghero_string_prev();
 								}
+								if (x != 0)
+									continue;
 								y = string_shift + string_map[string_index];
 								if (string_pressed[y] == 0) {
 									string_pressed[y] = 1;
