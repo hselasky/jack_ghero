@@ -89,16 +89,21 @@ static int cmd_key = 36;
 static int sustain;
 static int last_bend;
 static char *port_name;
-static const uint8_t string_map_full[] = {0, 2, 5, 7, 9, 11, 6, 8, 10, 8, 6, 11, 9, 7, 0};
-static const uint8_t string_map_guitar[] = {0, 5, 7, 9, 11, 6, 8, 10, 8, 6, 11, 9, 7, 0};
-static const uint8_t string_map_base[] = {0, 2, 0};
+static const uint8_t string_map_full_down[] = {2, 5, 7, 9, 11, 6, 8, 10, 0};
+static const uint8_t string_map_full_up[] = {10, 8, 6, 11, 9, 7, 0};
+static const uint8_t string_map_guitar_down[] = {5, 7, 9, 11, 6, 8, 10, 0};
+static const uint8_t string_map_guitar_up[] = {10, 8, 6, 11, 9, 7, 0};
+static const uint8_t string_map_base_down[] = {2, 0};
+static const uint8_t string_map_base_up[] = {4, 0};
 static const uint8_t *string_map;
+static uint8_t string_map_size = 1;
 static uint8_t string_pressed[24];
 static int string_next;
 static int string_shift;
 static int string_index;
-static int string_dir;
+static jack_time_t string_delta_time;
 static jack_time_t string_last_time;
+static jack_time_t string_output_time;
 static int mode;
 static uint32_t button_invert;
 
@@ -145,36 +150,38 @@ ghero_write_data(jack_nframes_t t, jack_nframes_t nframes, void *buf, uint8_t *m
 }
 
 static void
-ghero_string_next(void)
+ghero_chord_output(jack_nframes_t t, jack_nframes_t nframes, void *buf)
 {
-	string_index++;
-	if (string_map[string_index] == 0) {
-		/* rewind */
-		while (string_map[string_index - 1] != 0)
-			string_index--;
-	}
-}
+	uint8_t mbuf[4];
+	uint32_t y;
 
-static void
-ghero_string_prev(void)
-{
-	string_index--;
-	if (string_map[string_index] == 0) {
-		/* forward */
-		while (string_map[string_index + 1] != 0)
-			string_index++;
-	}
+	if (string_map == NULL || string_map[string_index] == 0)
+		return;
+
+	y = string_shift + string_map[string_index++];
+
+	if (string_pressed[y] != 0)
+		return;
+
+	/* key pressed */
+	string_pressed[y] = 1;
+	mbuf[0] = 0x90;
+	mbuf[1] = base_key + y;
+	mbuf[2] = 127;
+	t = ghero_write_data(t, nframes, buf, mbuf, 3);
 }
 
 static void
 ghero_read(jack_nframes_t nframes)
 {
 	void *buf;
+	jack_time_t curr;
+	jack_time_t delta;
 	jack_nframes_t t;
 	static uint8_t data[BUFFER_SIZE];
 	static uint32_t old_value;
 	uint8_t mbuf[8];
-	uint32_t delta;
+	uint32_t value_delta;
 	int len;
 	int i;
 	int vert_angle;
@@ -232,51 +239,47 @@ ghero_read(jack_nframes_t nframes)
 
 				value ^= button_invert;
 
-				delta = old_value ^ value;
+				value_delta = old_value ^ value;
 				old_value = value;
 
 				if (value != 0)
 					DPRINTF("value = 0x%08x, vert_angle = %d, bend = %d\n", value, vert_angle, bend);
 
-				if (delta & value & BUTTON_XBOX) {
+				if (value_delta & value & BUTTON_XBOX) {
 					mode++;
 					mode %= MODE_MAX;
 					switch (mode) {
 					case MODE_CHORD_FULL:
-						string_map = string_map_full;
-						string_index = 1;
+						string_index = 0;
 						button_invert = BUTTON_ORANGE;
 						break;
 					case MODE_CHORD_GUITAR_ONLY:
-						string_map = string_map_guitar;
-						string_index = 1;
+						string_index = 0;
 						button_invert = BUTTON_ORANGE;
 						break;
 					case MODE_CHORD_BASE_ONLY:
-						string_map = string_map_base;
-						string_index = 1;
+						string_index = 0;
 						button_invert = BUTTON_ORANGE;
 						break;
 					default:
-						string_map = NULL;
 						string_index = 0;
 						button_invert = 0;
 						break;
 					}
 					DPRINTF("new mode = %d\n", mode);
 				}
-				if (delta & BUTTON_YELLOW) {
+				if (value_delta & BUTTON_BLUE) {
 					switch (mode) {
 					case MODE_TRANS:
 						mbuf[0] = 0x90;
-						mbuf[1] = cmd_key + 2;
-						mbuf[2] = (value & BUTTON_YELLOW) ? 127 : 0;
+						mbuf[1] = cmd_key + 3;
+						mbuf[2] = (value & BUTTON_BLUE) ? 127 : 0;
 						t = ghero_write_data(t, nframes, buf, mbuf, 3);
 						break;
 					case MODE_CHORD_FULL:
 					case MODE_CHORD_GUITAR_ONLY:
 					case MODE_CHORD_BASE_ONLY:
-						if (!(value & BUTTON_YELLOW))
+						if (!(value & BUTTON_BLUE))
 							break;
 						string_next = 1;
 						break;
@@ -284,13 +287,7 @@ ghero_read(jack_nframes_t nframes)
 						break;
 					}
 				}
-				if (delta & (BUTTON_DOWN | BUTTON_UP)) {
-					jack_time_t curr;
-					jack_time_t delta;
-					uint32_t n;
-					uint32_t x;
-					uint32_t y;
-
+				if (value_delta & (BUTTON_DOWN | BUTTON_UP)) {
 					switch (mode) {
 					case MODE_TRANS:
 						mbuf[0] = 0x90;
@@ -299,31 +296,60 @@ ghero_read(jack_nframes_t nframes)
 						t = ghero_write_data(t, nframes, buf, mbuf, 3);
 						break;
 					case MODE_CHORD_FULL:
+						if (value & BUTTON_UP) {
+							string_map = string_map_full_up;
+							string_map_size = sizeof(string_map_full_up) - 1;
+							string_index = 0;
+						} else if (value & BUTTON_DOWN) {
+							string_map = string_map_full_down;
+							string_map_size = sizeof(string_map_full_down) - 1;
+							string_index = 0;
+						}
+						break;
+					case MODE_CHORD_GUITAR_ONLY:
+						if (value & BUTTON_UP) {
+							string_map = string_map_guitar_up;
+							string_map_size = sizeof(string_map_guitar_up) - 1;
+							string_index = 0;
+						} else if (value & BUTTON_DOWN) {
+							string_map = string_map_guitar_down;
+							string_map_size = sizeof(string_map_guitar_down) - 1;
+							string_index = 0;
+						}
+						break;
+					case MODE_CHORD_BASE_ONLY:
+						if (value & BUTTON_UP) {
+							string_map = string_map_base_up;
+							string_map_size = sizeof(string_map_base_up) - 1;
+							string_index = 0;
+						} else if (value & BUTTON_DOWN) {
+							string_map = string_map_base_down;
+							string_map_size = sizeof(string_map_base_down) - 1;
+							string_index = 0;
+						}
+						break;
+					default:
+						break;
+					}
+
+					switch (mode) {
+					case MODE_CHORD_FULL:
 					case MODE_CHORD_GUITAR_ONLY:
 					case MODE_CHORD_BASE_ONLY:
 						if (value & (BUTTON_DOWN | BUTTON_UP)) {
 							curr = jack_get_time();
 							delta = curr - string_last_time;
 							string_last_time = curr;
+							string_output_time = curr;
 
-							if (delta < MULTI_KEY_TIME) {
-								if (delta == 0)
-									n = STRING_NUM;
-								else
-									n = MULTI_KEY_TIME / delta;
-								if (n > STRING_NUM)
-									n = STRING_NUM;
-							} else {
-								n = 1;
-							}
+							string_delta_time = delta / string_map_size;
+							if (string_delta_time == 0)
+								string_delta_time = 1;
 
 							if (string_next != 0) {
 								string_next = 0;
 
 								string_shift = string_shift ? 0 : 12;
-								string_index = 1;
-								string_dir = 1;
-								ghero_string_prev();
 
 								if (sustain != 0) {
 									mbuf[0] = 0xB0;
@@ -337,26 +363,11 @@ ghero_read(jack_nframes_t nframes)
 									t = ghero_write_data(t, nframes, buf, mbuf, 3);
 								}
 							}
-							/* press */
-							for (x = 0; x != n; x++) {
-								if (~value & BUTTON_BLUE) {
-									if (string_dir != 0)
-										ghero_string_next();
-									else
-										ghero_string_prev();
-								}
-								if (x != 0)
-									continue;
-								y = string_shift + string_map[string_index];
-								if (string_pressed[y] == 0) {
-									string_pressed[y] = 1;
-									mbuf[0] = 0x90;
-									mbuf[1] = base_key + y;
-									mbuf[2] = 127;
-									t = ghero_write_data(t, nframes, buf, mbuf, 3);
-								}
-							}
+							/* key press */
+							ghero_chord_output(t, nframes, buf);
 						} else {
+							uint32_t x;
+
 							/* release */
 							for (x = 0; x != 24; x++) {
 								if (string_pressed[x] == 0)
@@ -373,38 +384,26 @@ ghero_read(jack_nframes_t nframes)
 						break;
 					}
 				}
-				if (delta & BUTTON_ORANGE) {
+				if (value_delta & BUTTON_ORANGE) {
 					sustain = (value & BUTTON_ORANGE) ? 1 : 0;
 					mbuf[0] = 0xB0;
 					mbuf[1] = 0x40;
 					mbuf[2] = sustain ? 127 : 0;
 					t = ghero_write_data(t, nframes, buf, mbuf, 3);
 				}
-				if (delta & BUTTON_BLUE) {
-					switch (mode) {
-					case MODE_TRANS:
-						mbuf[0] = 0x90;
-						mbuf[1] = cmd_key + 3;
-						mbuf[2] = (value & BUTTON_BLUE) ? 127 : 0;
-						t = ghero_write_data(t, nframes, buf, mbuf, 3);
-						break;
-					case MODE_CHORD_FULL:
-					case MODE_CHORD_GUITAR_ONLY:
-					case MODE_CHORD_BASE_ONLY:
-						if (value & BUTTON_BLUE)
-							string_dir = string_dir ? 0 : 1;
-						break;
-					default:
-						break;
-					}
+				if (value_delta & BUTTON_YELLOW) {
+					mbuf[0] = 0x90;
+					mbuf[1] = cmd_key + 2;
+					mbuf[2] = (value & BUTTON_BLUE) ? 127 : 0;
+					t = ghero_write_data(t, nframes, buf, mbuf, 3);
 				}
-				if (delta & BUTTON_RED) {
+				if (value_delta & BUTTON_RED) {
 					mbuf[0] = 0x90;
 					mbuf[1] = cmd_key + 1;
 					mbuf[2] = (value & BUTTON_RED) ? 127 : 0;
 					t = ghero_write_data(t, nframes, buf, mbuf, 3);
 				}
-				if (delta & BUTTON_GREEN) {
+				if (value_delta & BUTTON_GREEN) {
 					mbuf[0] = 0x90;
 					mbuf[1] = cmd_key + 0;
 					mbuf[2] = (value & BUTTON_GREEN) ? 127 : 0;
@@ -413,6 +412,23 @@ ghero_read(jack_nframes_t nframes)
 			} else {
 				break;
 			}
+		}
+		switch (mode) {
+		case MODE_CHORD_FULL:
+		case MODE_CHORD_GUITAR_ONLY:
+		case MODE_CHORD_BASE_ONLY:
+			if (old_value & (BUTTON_DOWN | BUTTON_UP)) {
+				curr = jack_get_time();
+				delta = curr - string_output_time;
+				if (delta >= string_delta_time) {
+					string_output_time += string_delta_time;
+					/* key press */
+					ghero_chord_output(t, nframes, buf);
+				}
+			}
+			break;
+		default:
+			break;
 		}
 	}
 	ghero_unlock();
