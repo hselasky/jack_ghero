@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2011 Hans Petter Selasky. All rights reserved.
+# Copyright (c) 2011-2021 Hans Petter Selasky. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -25,8 +25,6 @@
 #
 # Makefile for GuitarHero to MIDI converter
 #
-
-VERSION=1.0.3
 
 PROG=		jack_ghero
 
@@ -57,22 +55,5 @@ MAN=		jack_ghero.8
 .else
 MAN=
 .endif
-
-package:
-
-	make clean cleandepend HAVE_MAN=YES
-
-	tar -cvf temp.tar \
-		Makefile jack_ghero.c jack_ghero.8
-
-	rm -rf jack_ghero-${VERSION}
-
-	mkdir jack_ghero-${VERSION}
-
-	tar -xvf temp.tar -C jack_ghero-${VERSION}
-
-	rm -rf temp.tar
-
-	tar --uid=0 --gid=0 -jcvf jack_ghero-${VERSION}.tar.bz2 jack_ghero-${VERSION}
 
 .include <bsd.prog.mk>

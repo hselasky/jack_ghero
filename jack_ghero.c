@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2011 Hans Petter Selasky <hselasky@FreeBSD.org>
+ * Copyright (c) 2011-2021 Hans Petter Selasky <hselasky@FreeBSD.org>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -49,7 +49,6 @@
 #include <dev/usb/usbhid.h>
 
 #define	PACKAGE_NAME		"jack_ghero"
-#define	PACKAGE_VERSION		"1.0.3"
 #define	BUFFER_SIZE		256	/* bytes */
 #define	STRING_NUM		13
 #define	MODE_TRANS 0
@@ -545,7 +544,7 @@ static void
 usage()
 {
 	fprintf(stderr,
-	    "jack_ghero - GuitarHero to MIDI client v" PACKAGE_VERSION "\n"
+	    "jack_ghero - GuitarHero to MIDI client\n"
 	    "	-d /dev/uhid0 (set USB device)\n"
 	    "	-B (run in background)\n"
 	    "	-b 72 (base play key - C6)\n"
